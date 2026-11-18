@@ -18,11 +18,11 @@ class PaperExplainerApp extends StatefulWidget {
 class _PaperExplainerAppState extends State<PaperExplainerApp> {
   static const String apiUrl = String.fromEnvironment(
     "DOTNET_API_URL",
-    defaultValue: "http://localhost:5100",
+    defaultValue: "http://127.0.0.1:5100",
   );
   static const String webAppUrl = String.fromEnvironment(
     "NEXT_APP_URL",
-    defaultValue: "http://localhost:3000",
+    defaultValue: "http://127.0.0.1:3000",
   );
 
   String status = "Checking .NET API...";

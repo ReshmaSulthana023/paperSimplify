@@ -29,7 +29,7 @@ class _EmbeddedAppState extends State<EmbeddedApp> {
     try {
       await _controller.initialize();
       await _controller.setPopupWindowPolicy(
-        WebviewPopupWindowPolicy.showInSameWindow,
+        WebviewPopupWindowPolicy.sameWindow,
       );
       await _controller.loadUrl(widget.url);
       if (!mounted) {
