@@ -1,7 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
-
+import { useEffect, useRef, useState } from "react";
 type SectionSummary = {
   title: string;
   simple: string;
@@ -21,6 +20,13 @@ type AnalysisResult = {
   sectionSummaries: SectionSummary[];
   reportSections: ReportSection[];
   corpus: string[];
+  visualPages: VisualPage[];
+};
+
+type VisualPage = {
+  pageNumber: number;
+  dataUrl: string;
+  text: string;
 };
 
 type ChatMessage = {
@@ -29,6 +35,16 @@ type ChatMessage = {
   text: string;
   sources?: string[];
 };
+
+type SavedPaper = {
+  _id: string;
+  fileName: string;
+  pageCount: number;
+  summary: string;
+  createdAt: string;
+};
+
+const SESSION_PAPERS_KEY = "paper-explainer-session-papers";
 
 const missingInfoText = "Not discussed in the paper.";
 
@@ -290,6 +306,13 @@ function buildSectionSummaries(sentences: string[]) {
 function buildSummary(text: string, fileName: string, pageCount: number) {
   const cleanedText = text.replace(/\s+/g, " ").trim();
   const sentences = splitSentences(cleanedText);
+  const chunks: string[] = [];
+  for (let index = 0; index < cleanedText.length; index += 1200) {
+    chunks.push(cleanedText.slice(index, index + 1200).trim());
+  }
+  const corpus = [...sentences, ...chunks]
+    .filter((textChunk, index, all) => textChunk.length > 0 && all.indexOf(textChunk) === index)
+    .slice(0, 400);
   const keywords = topKeywords(cleanedText);
   const problem = firstMeaningfulSentence(sentences, ["problem", "challenge", "gap", "motivation", "objective", "need"]);
   const method = firstMeaningfulSentence(sentences, ["method", "approach", "framework", "pipeline", "algorithm", "model"]);
@@ -320,11 +343,14 @@ function buildSummary(text: string, fileName: string, pageCount: number) {
     keywords,
     sectionSummaries: buildSectionSummaries(sentences),
     reportSections: buildReportSections(sentences, keywords, pageCount),
-    corpus: sentences.slice(0, 300),
+    corpus,
   };
 }
 
-async function extractPdfText(file: File) {
+async function extractPdfText(
+  file: File,
+  onPageProcessed?: (current: number, total: number) => void,
+) {
   const pdfjs = await import("pdfjs-dist");
 
   pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -335,17 +361,33 @@ async function extractPdfText(file: File) {
   const buffer = await file.arrayBuffer();
   const document = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
   const pageTexts: string[] = [];
+  const visualPages: VisualPage[] = [];
+  const pagesToRead = Math.min(document.numPages, 12);
 
-  for (let pageIndex = 1; pageIndex <= document.numPages; pageIndex += 1) {
-    const page = await document.getPage(pageIndex);
-    const content = await page.getTextContent();
-    const pageText = content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
-    pageTexts.push(pageText);
+  for (let batchStart = 1; batchStart <= pagesToRead; batchStart += 8) {
+    const batchEnd = Math.min(batchStart + 7, pagesToRead);
+    const batch = await Promise.all(
+      Array.from({ length: batchEnd - batchStart + 1 }, async (_, offset) => {
+        const pageIndex = batchStart + offset;
+        const page = await document.getPage(pageIndex);
+        const content = await page.getTextContent();
+        return {
+          pageIndex,
+          pageText: content.items.map((item) => ("str" in item ? item.str : "")).join(" "),
+        };
+      }),
+    );
+
+    for (const { pageIndex, pageText } of batch) {
+      pageTexts.push(pageText);
+      onPageProcessed?.(pageIndex, pagesToRead);
+    }
   }
 
   return {
     text: pageTexts.join("\n\n"),
     pageCount: document.numPages,
+    visualPages,
   };
 }
 
@@ -403,12 +445,34 @@ export function PaperUploadPanel() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState("");
+  const [savedPapers, setSavedPapers] = useState<SavedPaper[]>(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+    try {
+      const stored = window.sessionStorage.getItem(SESSION_PAPERS_KEY);
+      return stored ? JSON.parse(stored) as SavedPaper[] : [];
+    } catch {
+      return [];
+    }
+  });
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [question, setQuestion] = useState("");
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [isAnswering, setIsAnswering] = useState(false);
+  const [profession, setProfession] = useState<string | null>(null);
+  const [professionInput, setProfessionInput] = useState("");
+  const [showProfessionPrompt, setShowProfessionPrompt] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/profile")
+      .then((response) => response.ok ? response.json() : null)
+      .then((body) => {
+        const value = body?.profile?.profession?.trim() ?? "";
+        setProfession(value || null);
+      })
+      .catch(() => setProfession(null));
+
+  }, []);
 
   const openFilePicker = () => inputRef.current?.click();
 
@@ -421,47 +485,140 @@ export function PaperUploadPanel() {
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
       setError("Please upload a PDF file.");
       setSelectedFile(null);
-      setAnalysis(null);
-      setChatMessages([]);
       return;
     }
 
     setError(null);
     setSelectedFile(file);
-    setAnalysis(null);
-    setChatMessages([]);
   };
 
-  const analyzePaper = async () => {
+  const saveProfession = async () => {
+    const value = professionInput.trim();
+    if (!value) {
+      setError("Please enter your profession.");
+      return;
+    }
+
+    const response = await fetch("/api/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profession: value }),
+    });
+    if (!response.ok) {
+      setError("Unable to save your profession.");
+      return;
+    }
+
+    setProfession(value);
+    setShowProfessionPrompt(false);
+    setError(null);
+    await analyzePaper(true);
+  };
+
+  const analyzePaper = async (professionConfirmed = false) => {
     if (!selectedFile) {
       setError("Choose a PDF first, then click Start analysis.");
+      return;
+    }
+    if (!professionConfirmed && !profession) {
+      setShowProfessionPrompt(true);
       return;
     }
 
     setIsAnalyzing(true);
     setError(null);
+    const analysisWindow = window.open("about:blank", "_blank");
+    if (analysisWindow) {
+      analysisWindow.document.title = "Analyzing paper...";
+      analysisWindow.document.body.innerHTML =
+        '<main style="min-height:100vh;display:grid;place-items:center;font-family:Arial,sans-serif;background:#fffdf8;color:#334155">' +
+        '<div style="text-align:center"><h1 style="margin:0 0 12px">Analyzing your paper</h1>' +
+        '<p id="analysis-status" style="margin:0">Reading PDF...</p></div></main>';
+    }
 
     try {
-      const extracted = await extractPdfText(selectedFile);
-      const result = buildSummary(extracted.text, selectedFile.name, extracted.pageCount);
-      setAnalysis({
-        fileName: selectedFile.name,
-        pageCount: extracted.pageCount,
-        summary: result.summary,
-        highlights: result.highlights,
-        keywords: result.keywords,
-        sectionSummaries: result.sectionSummaries,
-        reportSections: result.reportSections,
-        corpus: result.corpus,
+      setAnalysisProgress("Reading PDF...");
+      if (analysisWindow) {
+        analysisWindow.document.getElementById("analysis-status")?.replaceChildren(
+          analysisWindow.document.createTextNode("Reading PDF...")
+        );
+      }
+
+      const uploadForm = new FormData();
+      uploadForm.append("file", selectedFile);
+      void fetch("/api/papers/upload", {
+        method: "POST",
+        body: uploadForm,
+      }).catch(() => undefined);
+
+      const extracted = await extractPdfText(selectedFile, (current, total) => {
+        const progress = `Reading page ${current} of ${total}...`;
+        setAnalysisProgress(progress);
+        if (analysisWindow) {
+          analysisWindow.document.getElementById("analysis-status")?.replaceChildren(
+            analysisWindow.document.createTextNode(progress)
+          );
+        }
       });
-      setChatMessages([
-        {
-          id: createMessageId(),
-          role: "assistant",
-          text: "The paper is ready. Ask a clear question about the problem, method, results, or limitations.",
-        },
-      ]);
+
+      setAnalysisProgress("Building summary...");
+      if (analysisWindow) {
+        analysisWindow.document.getElementById("analysis-status")?.replaceChildren(
+          analysisWindow.document.createTextNode("Building structured report...")
+        );
+      }
+      const result = buildSummary(extracted.text, selectedFile.name, extracted.pageCount);
+
+      setAnalysisProgress("Saving analysis...");
+      if (analysisWindow) {
+        analysisWindow.document.getElementById("analysis-status")?.replaceChildren(
+          analysisWindow.document.createTextNode("Saving analysis...")
+        );
+      }
+      const saveResponse = await fetch("/api/papers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: selectedFile.name,
+          pageCount: extracted.pageCount,
+          summary: result.summary,
+          highlights: result.highlights,
+          keywords: result.keywords,
+          sectionSummaries: result.sectionSummaries,
+          reportSections: result.reportSections,
+          corpus: result.corpus,
+          visualPages: extracted.visualPages,
+          blobName: "",
+          blobContainer: "",
+        }),
+      });
+      if (saveResponse.ok) {
+        const saved = await saveResponse.json();
+        const savedPaperId = String(saved.id);
+        setSavedPapers(() => {
+          const updated = [
+            {
+              _id: savedPaperId,
+              fileName: selectedFile.name,
+              pageCount: extracted.pageCount,
+              summary: result.summary,
+              createdAt: new Date().toISOString(),
+            },
+          ];
+          window.sessionStorage.setItem(SESSION_PAPERS_KEY, JSON.stringify(updated));
+          return updated;
+        });
+        if (analysisWindow) {
+          analysisWindow.location.href = `/analysis/${savedPaperId}`;
+        } else {
+          window.location.href = `/analysis/${savedPaperId}`;
+        }
+      } else {
+        analysisWindow?.close();
+        setError("The analysis worked, but the paper could not be saved to your account.");
+      }
     } catch (analysisError) {
+      analysisWindow?.close();
       setError(
         analysisError instanceof Error
           ? analysisError.message
@@ -472,104 +629,50 @@ export function PaperUploadPanel() {
     }
   };
 
-  const askQuestion = async () => {
-    if (!analysis) {
-      setError("Analyze a paper first, then ask questions.");
-      return;
-    }
-
-    const trimmed = question.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    setError(null);
-    setIsAnswering(true);
-    const userMessageId = createMessageId();
-    const assistantMessageId = createMessageId();
-    const userMessage: ChatMessage = { id: userMessageId, role: "user", text: trimmed };
-    const snippets = retrieveSnippets(analysis.corpus, trimmed);
-    const assistantMessage: ChatMessage = {
-      id: assistantMessageId,
-      role: "assistant",
-      text: "Thinking...",
-      sources: snippets,
-    };
-
-    setChatMessages((previous) => [...previous, userMessage, assistantMessage]);
-    setQuestion("");
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          question: trimmed,
-          snippets,
-        }),
-      });
-
-      if (!response.ok || !response.body) {
-        const errorText = await response.text();
-        throw new Error(errorText || "The AI service is unavailable right now.");
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let generated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        generated += decoder.decode(value, { stream: true });
-        setChatMessages((previous) => previous.map((message) => (
-          message.id === assistantMessageId
-            ? { ...message, text: generated.trimStart() || "Thinking..." }
-            : message
-        )));
-      }
-
-      if (!generated.trim()) {
-        const fallback = buildGroundedAnswer(trimmed, snippets);
-        setChatMessages((previous) => previous.map((message) => (
-          message.id === assistantMessageId
-            ? { ...message, text: fallback }
-            : message
-        )));
-      }
-    } catch (chatError) {
-      const fallback = buildGroundedAnswer(trimmed, snippets);
-      setChatMessages((previous) => previous.map((message) => (
-        message.id === assistantMessageId
-          ? { ...message, text: fallback }
-          : message
-      )));
-      setError(
-        chatError instanceof Error
-          ? chatError.message
-          : "Unable to stream a live AI response. Showing local grounded answer instead.",
-      );
-    } finally {
-      setIsAnswering(false);
-    }
-  };
-
   const dropZoneState = isDragging
     ? "border-amber-500 bg-amber-100/80"
     : "border-amber-300 bg-amber-50/70";
 
-  const safeSectionSummaries = analysis?.sectionSummaries ?? [];
-  const safeReportSections = analysis?.reportSections ?? [];
-  const safeHighlights = analysis?.highlights ?? [];
-  const safeKeywords = analysis?.keywords ?? [];
-
   return (
-    <section className="rounded-[2rem] border border-white/75 bg-white/90 p-6 shadow-[0_16px_36px_rgba(91,67,33,0.08)] backdrop-blur">
+    <>
+      {showProfessionPrompt ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm">
+          <section role="dialog" aria-modal="true" aria-labelledby="profession-title"
+            className="w-full max-w-md rounded-[2rem] border border-white bg-white p-7 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-800">One-time profile setup</p>
+            <h2 id="profession-title" className="mt-2 text-2xl font-semibold text-slate-950">What is your profession?</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              This is saved once to personalize your profile.
+            </p>
+            <input
+              type="text"
+              value={professionInput}
+              onChange={(event) => setProfessionInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void saveProfession();
+                }
+              }}
+              placeholder="For example: Student, Engineer, or Researcher"
+              className="mt-5 w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-amber-600"
+            />
+            {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
+            <div className="mt-5 flex justify-end gap-3">
+              <button type="button" onClick={() => setShowProfessionPrompt(false)}
+                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600">
+                Cancel
+              </button>
+              <button type="button" onClick={() => void saveProfession()}
+                className="rounded-full bg-slate-950 px-5 py-2 text-sm font-semibold text-white">
+                Save and analyze
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      <section className="rounded-[2rem] border border-white/75 bg-white/90 p-6 shadow-[0_16px_36px_rgba(91,67,33,0.08)] backdrop-blur">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-slate-500">Upload paper</p>
@@ -616,13 +719,20 @@ export function PaperUploadPanel() {
           </button>
           <button
             type="button"
-            onClick={analyzePaper}
+            onClick={() => void analyzePaper()}
             disabled={!selectedFile || isAnalyzing}
             className="inline-flex rounded-full bg-slate-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ color: "#ffffff" }}
           >
             {isAnalyzing ? "Analyzing..." : "Start analysis"}
           </button>
         </div>
+
+        {isAnalyzing && analysisProgress ? (
+          <p className="mt-4 text-sm font-medium text-amber-800" role="status" aria-live="polite">
+            {analysisProgress}
+          </p>
+        ) : null}
 
         <div className="mt-4 space-y-2 text-sm">
           <p className="font-medium text-slate-700">
@@ -637,127 +747,39 @@ export function PaperUploadPanel() {
           <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
         ) : null}
 
-        {analysis ? (
-          <div className="mt-5 rounded-3xl border border-slate-200 bg-white p-5 text-left shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-500">Analysis result</p>
-                <h3 className="text-base font-semibold text-slate-950">
-                  Simple explanation for {analysis.fileName}
-                </h3>
-              </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                {analysis.pageCount} page{analysis.pageCount === 1 ? "" : "s"}
-              </span>
-            </div>
-
-            <div className="mt-4 space-y-5">
-              <div>
-                <p className="text-sm font-semibold text-amber-900">Easy Summary of the Research Paper</p>
-                <div className="mt-2 space-y-3">
-                  {safeReportSections.length > 0 ? safeReportSections.map((section) => (
-                    <article key={section.title} className="rounded-2xl bg-slate-50 px-4 py-3">
-                      <p className="text-sm font-semibold text-slate-900">{section.title}</p>
-                      <p className="mt-1 text-sm leading-6 text-slate-700">{section.body}</p>
-                    </article>
-                  )) : safeSectionSummaries.map((section) => (
-                    <article key={section.title} className="rounded-2xl bg-slate-50 px-4 py-3">
-                      <p className="text-sm font-semibold text-slate-900">{section.title}</p>
-                      <p className="mt-1 text-sm leading-6 text-slate-700">{section.simple}</p>
-                    </article>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm font-semibold text-amber-900">Highlights</p>
-                <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-700">
-                  {safeHighlights.map((highlight) => (
-                    <li key={highlight} className="rounded-2xl bg-slate-50 px-3 py-2">
-                      {highlight}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {safeKeywords.length > 0 ? (
-                <div>
-                  <p className="text-sm font-semibold text-amber-900">Detected topics</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {safeKeywords.map((keyword) => (
-                      <span
-                        key={keyword}
-                        className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-900"
-                      >
-                        {keyword}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              <div>
-                <p className="text-sm font-semibold text-amber-900">Ask about this paper</p>
-                <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-inner">
-                  <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
-                    {chatMessages.map((message) => (
-                      <article
-                        key={message.id}
-                        className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
-                          message.role === "user"
-                            ? "ml-8 bg-slate-950 text-white"
-                            : "mr-8 bg-white text-slate-700"
-                        }`}
-                      >
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-70">
-                          {message.role}
-                        </p>
-                        <p className="mt-1 whitespace-pre-line">{message.text}</p>
-                        {message.sources && message.sources.length > 0 ? (
-                          <details className="mt-2 text-xs">
-                            <summary className="cursor-pointer font-semibold">View retrieved source snippets</summary>
-                            <ul className="mt-2 space-y-1">
-                              {message.sources.map((source) => (
-                                <li key={source} className="rounded-md bg-slate-100 px-2 py-1 leading-5 text-slate-700">
-                                  {source}
-                                </li>
-                              ))}
-                            </ul>
-                          </details>
-                        ) : null}
-                      </article>
-                    ))}
-                  </div>
-
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <input
-                      type="text"
-                      value={question}
-                      onChange={(event) => setQuestion(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          askQuestion();
-                        }
-                      }}
-                      placeholder="Ask: What is the core contribution of this paper?"
-                      className="w-full rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none ring-amber-300 placeholder:text-slate-400 focus:ring"
-                    />
-                    <button
-                      type="button"
-                      onClick={askQuestion}
-                      disabled={!analysis || !question.trim() || isAnswering}
-                      className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Ask
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+        <div className="mt-6 border-t border-amber-200 pt-5 text-left">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-slate-800">Uploaded papers</p>
+            {savedPapers.length > 0 ? (
+              <span className="text-xs font-medium text-slate-500">{savedPapers.length} saved</span>
+            ) : null}
           </div>
-        ) : null}
+
+          {savedPapers.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-500">No uploaded papers yet.</p>
+          ) : (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {savedPapers.map((paper) => (
+                <a
+                  key={paper._id}
+                  href={`/analysis/${paper._id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-amber-400 hover:shadow-md"
+                >
+                  <p className="truncate text-sm font-semibold text-slate-900">{paper.fileName}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {paper.pageCount} page{paper.pageCount === 1 ? "" : "s"}
+                    {paper.createdAt ? ` · ${new Date(paper.createdAt).toLocaleDateString()}` : ""}
+                  </p>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
-    </section>
+      </section>
+    </>
   );
 }
