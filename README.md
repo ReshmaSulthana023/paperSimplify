@@ -1,253 +1,184 @@
 # AI Research Paper Explainer
 
-AI Research Paper Explainer is a full-stack web application that helps students,
-researchers, and beginners understand uploaded research papers. The application
-extracts PDF content, generates beginner-friendly summaries, stores paper and chat
-data, and provides grounded AI answers through a Groq-powered chatbot.
+AI Research Paper Explainer is a full-stack application that helps users
+understand research PDFs. It extracts paper content in the browser, generates
+structured beginner-friendly reports, provides grounded AI chat, and saves
+papers, users, profiles, and conversations in MongoDB.
 
-The application supports text, tables, graphs, figures, diagrams, and page images
-from PDF documents. It also includes technical-word explanations, voice input,
-text-to-speech, account management, and saved paper history.
+The project includes a Next.js web application, an ASP.NET Core API gateway,
+and a Flutter PWA that embeds the web application for a standalone app-like
+experience.
 
-## Key Features
+## Successfully Implemented
 
-- Public application landing page
-- User registration and sign-in
-- Secure session-based authentication
+- Secure account registration and sign-in
 - Password hashing with bcrypt
-- PDF drag-and-drop upload
-- Browser-based PDF text extraction
-- PDF page rendering for visual analysis
+- HTTP-only signed session cookies
+- MongoDB-backed paper and chat history
+- PDF text extraction in the browser
 - Page-count detection
-- Abstract and paper-summary generation
-- Problem, objective, methodology, findings, and limitation sections
+- Structured paper sections
+- Beginner-friendly section summaries
 - Keyword and highlighted-topic detection
-- Grounded question answering from uploaded paper content
-- Keyword-based relevant passage retrieval
-- Relevant PDF-page retrieval for table, graph, chart, figure, and diagram questions
-- Groq large language model integration
-- Streaming chatbot responses
-- Chat history saved per paper
-- Paper history and account profile pages
-- Technical-term hover and keyboard-focus definitions
-- Browser voice input
-- Read-aloud, pause, resume, and stop controls
-- English, Telugu, Hindi, Marathi, Kannada, and Tamil language options
-- Responsive desktop and mobile interface
-- MongoDB storage for users, papers, analysis, visual pages, and chat messages
+- Grounded Groq chatbot responses
+- Technical-term explanations
+- English, Telugu, Hindi, Marathi, Kannada, and Tamil support
+- Voice input and read-aloud controls
+- Profile name and profession updates
+- Paper reopening and per-user history
+- Session-only uploaded-paper cards in the workspace
+- Same-window structured report navigation
+- ASP.NET Core 8 API gateway
+- Flutter web/PWA client
+- PWA installation support through Chrome
+- Removed Azure Blob Storage and Azure/AWS deployment integrations
 
-## Technologies Used
+## Technology Stack
 
-### Frontend
+### Web Application
 
-- **Next.js 16** - React application framework and App Router
-- **React 19** - Component-based user interface
-- **TypeScript** - Application and API type safety
-- **Tailwind CSS 4** - Responsive styling and layout
-- **CSS** - Global styles and browser defaults
-- **Next.js Server Components** - Server-rendered pages and session checks
-- **Next.js Client Components** - Interactive upload, chat, voice, and tooltip features
+- Next.js 16
+- React 19
+- TypeScript
+- Tailwind CSS 4
+- PDF.js
+- Node.js
 
-### Backend
+### Backend and Data
 
-- **Next.js API Routes** - Authentication, paper storage, profile, and chat APIs
-- **Node.js** - Server runtime
-- **Groq OpenAI-Compatible API** - Streaming AI chat completions
-- **Groq Qwen model** - Primary large language model
-- **Groq GPT OSS fallback model** - Alternate chat completion model
-- **MongoDB** - Persistent application database
-- **Mongoose** - MongoDB schemas and database operations
-- **bcryptjs** - Password hashing
-- **HTTP-only cookies** - Session authentication
-- **HMAC-SHA256** - Signed session-token validation
+- Next.js API routes
+- ASP.NET Core 8 API gateway
+- MongoDB
+- Mongoose
+- bcryptjs
+- Groq OpenAI-compatible chat API
 
-### PDF and Document Processing
+### Client
 
-- **PDF.js** - PDF loading and text extraction
-- **PDF.js Canvas Rendering** - Page image generation for visual questions
-- **Canvas API** - Browser-side page rendering
-- **JPEG compression** - Compact storage of rendered PDF pages
-- **Keyword scoring** - Relevant text and visual-page retrieval
-- **Sentence and section analysis** - Simple research-paper summaries
+- Flutter stable
+- Flutter web/PWA
 
-### Speech and Accessibility
+No Azure or AWS SDK, storage account, container, or deployment workflow is
+required.
 
-- **Web Speech Recognition API** - Microphone voice input
-- **Speech Synthesis API** - Read-aloud functionality
-- **Semantic HTML** - Structured headings and sections
-- **ARIA labels** - Accessible controls and tooltips
-- **Keyboard focus states** - Accessible navigation and term definitions
-- **Viewport-aware tooltips** - Definitions that remain visible on screen
+## Features
 
-### Development and Build Tools
+- Account registration and sign-in
+- Secure, HTTP-only session authentication
+- PDF upload and browser-based text extraction
+- Beginner-friendly paper summaries
+- Problem, methodology, results, findings, and limitation sections
+- Keyword and topic detection
+- Grounded AI chat about the uploaded paper
+- Chat and paper history
+- Technical-term explanations
+- Voice input and read-aloud controls
+- English, Telugu, Hindi, Marathi, Kannada, and Tamil support
 
-- **npm** - Dependency and script management
-- **ESLint** - Code-quality checks
-- **TypeScript compiler** - Static type checking
-- **Turbopack** - Next.js development and build bundler
-- **MongoDB Compass** - Local database inspection
-- **MongoDB Atlas** - Optional cloud database hosting
+## Architecture
 
-## System Architecture
+```text
+Flutter PWA
+      |
+      v
+Next.js web application
+      |
+      v
+ASP.NET Core API gateway
+      |
+      +--> MongoDB
+      |
+      +--> Groq API
+```
 
-1. The user registers or signs in.
-2. The user selects or drags a PDF into the uploader.
-3. The browser reads the PDF with PDF.js.
-4. PDF text is converted into sentences and keyword corpus entries.
-5. PDF pages are rendered into compressed images for visual analysis.
-6. The analysis is stored in MongoDB with the paper metadata.
-7. The application creates a section-wise beginner-friendly summary.
-8. A paper-specific analysis page opens in a new tab.
-9. The chatbot retrieves relevant text and page context.
-10. Groq generates a grounded streamed response.
-11. Chat messages and source snippets are saved in MongoDB.
+The Next.js application is the primary web interface and owns authentication,
+MongoDB access, PDF analysis, and Groq chat integration. ASP.NET Core provides
+an API gateway for Flutter and external API clients. The Flutter PWA embeds the
+Next.js application and provides standalone PWA installation and navigation.
 
-## Database Structure
+## Verified Functionality
 
-The MongoDB database name is `paper-explainer` by default.
+The following checks have been completed in the local environment:
 
-### Users
-
-Stores:
-
-- Name
-- Email
-- Bcrypt password hash
-- Profession
-- Account timestamps
-
-### Papers
-
-Stores:
-
-- User ID
-- File name
-- Page count
-- Summary
-- Highlights
-- Detected keywords
-- Section summaries
-- Report sections
-- Extracted text corpus
-- Rendered visual-page data
-- Upload timestamps
-
-### Chat Messages
-
-Stores:
-
-- Paper ID
-- User ID
-- User or assistant role
-- Message text
-- Retrieved source snippets
-- Message timestamps
+| Area | Result |
+|---|---|
+| Next.js server | Running at `http://localhost:3000` |
+| MongoDB service | Running |
+| MongoDB account creation | Passed |
+| Sign-in | Passed |
+| Unauthenticated profile access | Rejected with `401` |
+| Unauthenticated paper history | Rejected with `401` |
+| Profile name update | Passed |
+| Profile profession update | Passed |
+| Profile read-back | Passed |
+| ASP.NET Core API | Running at `http://localhost:5100` |
+| ASP.NET status endpoint | Passed |
+| Next.js production build | Passed |
+| Flutter SDK and Chrome support | Passed |
+| Flutter web/PWA production build | Passed |
+| PWA manifest and service worker | Passed |
+| Azure/AWS source references | Removed from application code |
 
 ## Project Structure
 
 ```text
 src/
   app/
-    page.tsx                  # Public landing page and signed-in dashboard
-    login/                    # Sign-in page
-    register/                 # Account-registration page
-    profile/                  # User profile page
-    history/                  # Saved paper history
-    analysis/[id]/            # Paper summary and chatbot page
-    api/
-      auth/                   # Login, logout, and registration APIs
-      papers/                 # Paper save, read, and history APIs
-      chat/                   # Groq streaming and chat-history APIs
-      profile/                # Profile updates
+    api/                    # Authentication, papers, profile, and chat APIs
+    analysis/[id]/          # Structured paper report
+    history/                # Saved paper history
   components/
-    paper-upload-panel.tsx    # PDF upload and analysis workflow
-    paper-chat.tsx            # Grounded chatbot and speech controls
-    summary-reader.tsx        # Read-aloud summary controls
-    technical-text.tsx        # Technical-word glossary tooltips
-    logout-button.tsx         # Session sign-out control
+    paper-upload-panel.tsx  # PDF upload and report workflow
+    paper-chat.tsx          # Grounded chatbot
+    summary-reader.tsx      # Read-aloud summary controls
   lib/
-    auth.ts                   # Session and authentication helpers
-    db.ts                     # Mongoose models and database connection
+    auth.ts                 # Session helpers
+    db.ts                   # MongoDB and Mongoose models
+
+backend-dotnet/
+  PaperExplainer.Api.csproj
+  Program.cs
+
+flutter_app/
+  pubspec.yaml
+  lib/main.dart
+  web/manifest.json
+  web/index.html
+  build/web/             # Generated PWA production bundle
 ```
+
+## Prerequisites
+
+- Node.js 20 or later
+- npm
+- MongoDB or MongoDB Atlas
+- A Groq API key
+- .NET 8 SDK for the API gateway
+- Flutter 3.22 or later for the mobile client
 
 ## Environment Variables
 
-Create or update `.env.local` in the project root:
+Create `.env.local` in the project root:
 
 ```env
 GROQ_API_KEY=your_groq_api_key
 GROQ_MODEL=qwen/qwen3.8-27b
 GROQ_API_BASE_URL=https://api.groq.com/openai/v1
-
 AUTH_SECRET=a-long-random-secret
-
 MONGODB_URI=mongodb://127.0.0.1:27017
 MONGODB_DB_NAME=paper-explainer
-
-AZURE_STORAGE_CONNECTION_STRING=
-AZURE_BLOB_CONTAINER=research-papers
 ```
 
-For MongoDB Atlas, replace `MONGODB_URI` with an Atlas connection string:
+Generate an authentication secret:
 
-```env
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-For Azure Blob Storage, add the storage account connection string to
-`AZURE_STORAGE_CONNECTION_STRING`. Uploaded PDFs are stored privately in the
-`research-papers` container by default. The container name can be changed with
-`AZURE_BLOB_CONTAINER`.
+## Run the Next.js Web Application
 
-## Azure App Service Deployment
-
-The repository includes an Azure App Service deployment workflow and a
-standalone Docker build:
-
-- `Dockerfile` - Builds and runs the Next.js standalone server
-- `.github/workflows/azure-app-service.yml` - Builds an image and deploys it
-- `.env.azure.example` - Azure environment-variable template
-
-Configure these GitHub repository secrets before deployment:
-
-```text
-AZURE_CREDENTIALS
-AZURE_RESOURCE_GROUP
-```
-
-Configure these application settings in Azure App Service:
-
-```text
-GROQ_API_KEY
-GROQ_MODEL
-GROQ_API_BASE_URL
-AUTH_SECRET
-MONGODB_URI
-MONGODB_DB_NAME
-AZURE_STORAGE_CONNECTION_STRING
-AZURE_BLOB_CONTAINER
-WEBSITES_PORT=3000
-```
-
-Push to `main` or run the workflow manually to deploy. Azure App Service can use
-the MongoDB Atlas database and Azure Blob Storage while keeping Groq server-side.
-
-The Atlas cluster's network access list must include the public IP of the server
-running this application.
-
-## Run Locally
-
-Install dependencies:
-
-```bash
+```powershell
 npm install
-```
-
-Start MongoDB locally or configure MongoDB Atlas.
-
-Start the Next.js development server:
-
-```bash
 npm run dev
 ```
 
@@ -257,33 +188,151 @@ Open:
 http://localhost:3000
 ```
 
-## Create a Production Build
+## Run the .NET API Gateway
 
-```bash
+The .NET SDK is required to restore and run the API.
+
+```powershell
+cd backend-dotnet
+dotnet run
+```
+
+By default, the service runs on a random localhost port configured by the
+ASP.NET Core launcher. Set the Next.js URL explicitly:
+
+```powershell
+$env:NEXT_APP_BASE_URL="http://localhost:3000"
+$env:ASPNETCORE_URLS="http://localhost:5100"
+dotnet run
+```
+
+Check its status at:
+
+```text
+http://localhost:5100/api/status
+```
+
+## Run the Flutter Application
+
+Install the Flutter SDK, then install dependencies:
+
+```powershell
+cd flutter_app
+flutter pub get
+```
+
+Run the Flutter PWA in Chrome:
+
+```powershell
+flutter run -d chrome
+```
+
+Build and serve the installable production PWA:
+
+```powershell
+flutter build web --dart-define=DOTNET_API_URL=http://localhost:5100 --dart-define=NEXT_APP_URL=http://localhost:3000
+cd build/web
+python -m http.server 8080
+```
+
+Open `http://localhost:8080` in Chrome. Use **Install** in the Chrome address
+bar or **Chrome menu > Install app** to add it to Windows.
+
+## Share the Application for Testing
+
+For temporary internet access, Cloudflare Tunnel can expose the local Next.js
+server:
+
+```powershell
+cloudflared tunnel --url http://localhost:3000
+```
+
+Send the generated public `trycloudflare.com` URL to a tester. The URL is
+temporary, changes when the tunnel restarts, and requires Next.js and MongoDB
+to remain running on the host computer.
+
+For permanent and reliable sharing, deploy the Next.js application to a public
+hosting platform such as Vercel and add MongoDB Atlas plus the required Groq
+environment variables.
+
+## Database Structure
+
+### Users
+
+- Name
+- Email
+- Bcrypt password hash
+- Profession
+- Creation and update timestamps
+
+### Papers
+
+- Owner user ID
+- File name
+- Page count
+- Summary
+- Highlights
+- Keywords
+- Section summaries
+- Report sections
+- Extracted text corpus
+- Visual-page data
+- Upload timestamps
+
+### Chat Messages
+
+- Paper ID
+- Owner user ID
+- User or assistant role
+- Message text
+- Source snippets
+- Creation timestamp
+
+## Production Build
+
+```powershell
+npm run lint
 npm run build
 npm run start
 ```
 
-## Available Scripts
+Build the Flutter PWA:
 
-```bash
-npm run dev       # Start the development server
-npm run build     # Create and type-check a production build
-npm run start     # Start the production server
-npm run lint      # Run ESLint
+```powershell
+cd flutter_app
+flutter build web --dart-define=DOTNET_API_URL=http://localhost:5100 --dart-define=NEXT_APP_URL=http://localhost:3000
 ```
 
-## Security Notes
+The generated files are stored in `flutter_app/build/web`.
 
-- Passwords are hashed before database storage.
+## Final Verification Checklist
+
+Before demonstrating or sharing the application, verify:
+
+1. MongoDB is running.
+2. `.env.local` contains valid Groq and MongoDB values.
+3. Next.js responds at `http://localhost:3000`.
+4. `.NET` responds at `http://localhost:5100/api/status`.
+5. Account registration creates a MongoDB user.
+6. Sign-in opens the paper workspace.
+7. Profile name and profession can be updated.
+8. A PDF opens and produces a structured report.
+9. Going back to the workspace shows the session paper.
+10. History opens previously saved papers for the signed-in user.
+11. Chat questions receive grounded paper responses.
+12. The Flutter PWA responds at `http://localhost:8080`.
+
+## Security
+
+- Passwords are hashed with bcrypt.
 - Authentication sessions use signed, HTTP-only cookies.
 - Paper and chat APIs verify the logged-in user.
-- Paper records are associated with their owning user ID.
-- The Groq API key remains server-side and is not exposed to the browser.
-- MongoDB Atlas credentials and API keys should never be committed to source control.
+- Groq credentials remain server-side.
+- MongoDB credentials and API keys must not be committed to source control.
 
 ## External Services
 
-- **Groq** - Streaming text and vision-capable LLM responses
-- **MongoDB / MongoDB Atlas** - Persistent application data
-- **Browser APIs** - PDF processing, speech recognition, and text-to-speech
+- **Groq** - Streaming text and vision-capable AI answers
+- **MongoDB** - Persistent application storage
+- **PDF.js** - Browser PDF text extraction
+- **Browser APIs** - Speech recognition and text-to-speech

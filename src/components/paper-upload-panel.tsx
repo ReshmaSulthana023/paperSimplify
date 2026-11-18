@@ -527,54 +527,19 @@ export function PaperUploadPanel() {
 
     setIsAnalyzing(true);
     setError(null);
-    const analysisWindow = window.open("about:blank", "_blank");
-    if (analysisWindow) {
-      analysisWindow.document.title = "Analyzing paper...";
-      analysisWindow.document.body.innerHTML =
-        '<main style="min-height:100vh;display:grid;place-items:center;font-family:Arial,sans-serif;background:#fffdf8;color:#334155">' +
-        '<div style="text-align:center"><h1 style="margin:0 0 12px">Analyzing your paper</h1>' +
-        '<p id="analysis-status" style="margin:0">Reading PDF...</p></div></main>';
-    }
 
     try {
       setAnalysisProgress("Reading PDF...");
-      if (analysisWindow) {
-        analysisWindow.document.getElementById("analysis-status")?.replaceChildren(
-          analysisWindow.document.createTextNode("Reading PDF...")
-        );
-      }
-
-      const uploadForm = new FormData();
-      uploadForm.append("file", selectedFile);
-      void fetch("/api/papers/upload", {
-        method: "POST",
-        body: uploadForm,
-      }).catch(() => undefined);
 
       const extracted = await extractPdfText(selectedFile, (current, total) => {
         const progress = `Reading page ${current} of ${total}...`;
         setAnalysisProgress(progress);
-        if (analysisWindow) {
-          analysisWindow.document.getElementById("analysis-status")?.replaceChildren(
-            analysisWindow.document.createTextNode(progress)
-          );
-        }
       });
 
       setAnalysisProgress("Building summary...");
-      if (analysisWindow) {
-        analysisWindow.document.getElementById("analysis-status")?.replaceChildren(
-          analysisWindow.document.createTextNode("Building structured report...")
-        );
-      }
       const result = buildSummary(extracted.text, selectedFile.name, extracted.pageCount);
 
       setAnalysisProgress("Saving analysis...");
-      if (analysisWindow) {
-        analysisWindow.document.getElementById("analysis-status")?.replaceChildren(
-          analysisWindow.document.createTextNode("Saving analysis...")
-        );
-      }
       const saveResponse = await fetch("/api/papers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -608,17 +573,11 @@ export function PaperUploadPanel() {
           window.sessionStorage.setItem(SESSION_PAPERS_KEY, JSON.stringify(updated));
           return updated;
         });
-        if (analysisWindow) {
-          analysisWindow.location.href = `/analysis/${savedPaperId}`;
-        } else {
-          window.location.href = `/analysis/${savedPaperId}`;
-        }
+        window.location.assign(`/analysis/${savedPaperId}`);
       } else {
-        analysisWindow?.close();
         setError("The analysis worked, but the paper could not be saved to your account.");
       }
     } catch (analysisError) {
-      analysisWindow?.close();
       setError(
         analysisError instanceof Error
           ? analysisError.message
@@ -763,8 +722,6 @@ export function PaperUploadPanel() {
                 <a
                   key={paper._id}
                   href={`/analysis/${paper._id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-amber-400 hover:shadow-md"
                 >
                   <p className="truncate text-sm font-semibold text-slate-900">{paper.fileName}</p>
