@@ -1,4 +1,4 @@
-# AI Research Paper Explainer
+# PaperSimplify , AI Research Paper Explainer
 
 AI Research Paper Explainer is a full-stack,AI application that helps users
 understand research PDFs. It extracts paper content in the browser, generates
