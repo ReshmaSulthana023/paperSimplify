@@ -1,6 +1,6 @@
 # AI Research Paper Explainer
 
-AI Research Paper Explainer is a full-stack application that helps users
+AI Research Paper Explainer is a full-stack,AI application that helps users
 understand research PDFs. It extracts paper content in the browser, generates
 structured beginner-friendly reports, provides grounded AI chat, and saves
 papers, users, profiles, and conversations in MongoDB.
